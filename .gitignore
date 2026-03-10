@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build
+.next/
+out/
+dist/
+build/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# claude local settings
+.claude/settings.local.json
+
+# bmad (installe localement via /install-bmad, pas commite)
+_bmad/
+.claude/commands/bmad/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# template dev (not for main)
+_template-dev/

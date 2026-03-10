@@ -1,0 +1,51 @@
+# =============================================================================
+# TIER 2 - Tests (manuel uniquement)
+# =============================================================================
+# Tests unitaires avec Vitest
+# Coût: ~3-5 min (lancé manuellement)
+# Quand: avant merge d'une feature importante
+# =============================================================================
+
+name: Tests
+
+on:
+  workflow_dispatch: # Bouton "Run workflow" dans GitHub Actions
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test:ci
+        env:
+          CI: true
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7

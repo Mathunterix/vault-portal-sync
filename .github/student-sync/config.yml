@@ -1,0 +1,34 @@
+# config sync vibedev-template → vibedev-template-student
+# ce fichier definit ce qui est exclu du repo etudiant
+# et quels fichiers sont remplaces par des versions simplifiees
+
+# dossiers et fichiers exclus du repo etudiant
+exclude:
+  # scratchpad de dev du template lui-meme (scripts publish, notes internes)
+  - _template-dev/
+
+  # anciennes commandes remplacees par les skills (0-flow/, 6-extra/)
+  - .claude/commands(old)/
+
+  # agents avances : necessitent une comprehension poussee de claude code
+  # on garde deep-search car utile a tous les niveaux
+  - .claude/agents/code-reviewer.md
+  - .claude/agents/explore-codebase.md
+  - .claude/agents/explore-docs.md
+  - .claude/agents/fix-build.md
+  - .claude/agents/security-check.md
+  - .claude/agents/snipper.md
+
+  # skills legacy dupliques dans .claude/skills/ (ancienne arborescence Biblitheque)
+  - .claude/skills/Biblitheque/
+
+  # obsidian-notes : 500+ lignes de regles pour gestion de vault Obsidian personnel
+  - .claude/rules/obsidian-notes.md
+  # publish-to-main : workflow specifique au maintien du template (publish develop→main)
+  - .claude/rules/publish-to-main.md
+
+  # config IDE Cursor : preferences editeur specifiques au mainteneur
+  - .cursor/
+
+  # la config de sync elle-meme (meta, pas utile dans le repo etudiant)
+  - .github/student-sync/

@@ -1,0 +1,95 @@
+# =============================================================================
+# Claude Auto-Fix (trigger via label ou @claude)
+# =============================================================================
+# Claude Code lit automatiquement CLAUDE.md et .claude/rules/ du projet.
+#
+# SECURITE :
+# - Se declenche UNIQUEMENT quand un collaborateur (OWNER/COLLABORATOR/MEMBER)
+#   ajoute le label "claude-fix" ou ecrit "@claude" dans un commentaire
+# - Les contributeurs externes NE PEUVENT PAS declencher ce workflow
+# - Double verif : condition `if` + l'action verifie l'acces en ecriture au repo
+#
+# CE QUI EST CHARGE AUTOMATIQUEMENT :
+# - CLAUDE.md (instructions projet)
+# - .claude/rules/ (conventions de code)
+#
+# CE QUI N'EST PAS CHARGE :
+# - .claude/skills/ (il faut les invoquer via le parametre `prompt`)
+# - .mcp.json (il faut passer --mcp-config dans claude_args)
+#
+# PREREQUIS :
+# - Secret ANTHROPIC_API_KEY dans Settings > Secrets > Actions
+# - Cle API Anthropic (https://console.anthropic.com/settings/keys)
+# - Cout : ~$0.20-0.50 par fix (Sonnet)
+# =============================================================================
+
+name: Claude Auto-Fix
+
+on:
+  # Trigger quand le label "claude-fix" est ajoute a une issue
+  issues:
+    types: [labeled]
+
+  # Trigger quand quelqu'un commente sur une issue ou PR
+  issue_comment:
+    types: [created]
+
+  # Trigger quand quelqu'un commente sur une review de PR
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  claude-fix:
+    # Securite : seuls OWNER, COLLABORATOR ou MEMBER peuvent declencher
+    #
+    # 3 scenarios :
+    # 1. Label "claude-fix" ajoute a une issue (par un collaborateur)
+    # 2. Commentaire "@claude" sur une issue (par un collaborateur)
+    # 3. Commentaire "@claude" sur une review PR (par un collaborateur)
+    if: |
+      (github.event_name == 'issues'
+        && github.event.label.name == 'claude-fix'
+        && (
+          github.event.sender.login == github.repository_owner
+          || github.event.issue.author_association == 'OWNER'
+          || github.event.issue.author_association == 'COLLABORATOR'
+          || github.event.issue.author_association == 'MEMBER'
+        )
+      ) ||
+      (github.event_name == 'issue_comment'
+        && contains(github.event.comment.body, '@claude')
+        && (
+          github.event.comment.author_association == 'OWNER'
+          || github.event.comment.author_association == 'COLLABORATOR'
+          || github.event.comment.author_association == 'MEMBER'
+        )
+      ) ||
+      (github.event_name == 'pull_request_review_comment'
+        && contains(github.event.comment.body, '@claude')
+        && (
+          github.event.comment.author_association == 'OWNER'
+          || github.event.comment.author_association == 'COLLABORATOR'
+          || github.event.comment.author_association == 'MEMBER'
+        )
+      )
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # trigger_phrase par defaut = "@claude"
+          # claude lit CLAUDE.md et rules/ automatiquement

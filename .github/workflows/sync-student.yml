@@ -1,0 +1,66 @@
+name: Sync to student template
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: sync-student
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    if: github.repository == 'Mathunterix/vibedev-template'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source (vibedev-template)
+        uses: actions/checkout@v4
+        with:
+          path: source
+
+      - name: Checkout target (vibedev-template-student)
+        uses: actions/checkout@v4
+        with:
+          repository: Mathunterix/vibedev-template-student
+          token: ${{ secrets.STUDENT_SYNC_PAT }}
+          path: target
+
+      - name: Install yq
+        uses: mikefarah/yq@v4
+
+      - name: Build exclude file from config
+        run: |
+          CONFIG="source/.github/student-sync/config.yml"
+          echo ".git" > /tmp/excludes.txt
+          yq '.exclude[]' "$CONFIG" >> /tmp/excludes.txt
+
+      - name: Rsync source to target
+        run: |
+          rsync -a --delete \
+            --exclude-from=/tmp/excludes.txt \
+            source/ target/
+
+      - name: Apply overrides
+        run: |
+          CONFIG="source/.github/student-sync/config.yml"
+          OVERRIDES_DIR="source/.github/student-sync/overrides"
+          while IFS= read -r file; do
+            if [ -f "$OVERRIDES_DIR/$file" ]; then
+              cp "$OVERRIDES_DIR/$file" "target/$file"
+            fi
+          done < <(yq '.overrides[]' "$CONFIG")
+
+      - name: Commit and push if changed
+        working-directory: target
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "sync from vibedev-template @ $(date -u +%Y%m%d%H%M%S)"
+            git push
+          fi
