@@ -9,6 +9,5 @@ data.json
 .cursor/
 .DS_Store
 
-.claude/settings.local.json
+.claude/
 _bmad/
-.claude/commands/bmad/
