@@ -87,13 +87,15 @@ export class ScopeResolver {
     }
 
     // --- Always include files with special frontmatter keys ---
+    const frontmatterKeys = audience.includeFrontmatter ?? [
+      "user-portal",
+      "audience",
+      "audience-portal",
+    ];
     for (const file of allFiles) {
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = cache?.frontmatter;
-      if (
-        fm &&
-        ("user-portal" in fm || "audience" in fm || "audience-portal" in fm)
-      ) {
+      if (fm && frontmatterKeys.some((key) => key in fm)) {
         inScope.add(file);
       }
     }

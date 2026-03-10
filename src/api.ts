@@ -106,13 +106,32 @@ export class PortalApi {
   }
 
   // GET /api/collab/audiences
+  // Custom unwrap: API returns { audiences: [...], includeFrontmatter: [...] }
   async getAudiences(): Promise<CollabAudience[]> {
-    return this.request(
+    const raw = await this.request<Record<string, unknown>>(
       "GET",
       "/api/collab/audiences",
-      undefined,
-      z.array(collabAudienceSchema),
     );
+    const obj =
+      typeof raw === "object" && raw !== null
+        ? raw
+        : ({} as Record<string, unknown>);
+    const audiences = Array.isArray(obj.audiences)
+      ? obj.audiences
+      : Array.isArray(raw)
+        ? (raw as unknown[])
+        : [];
+    const includeFrontmatter = Array.isArray(obj.includeFrontmatter)
+      ? (obj.includeFrontmatter as string[])
+      : undefined;
+
+    // Inject includeFrontmatter into each audience for scope-resolver
+    const enriched = audiences.map((a: Record<string, unknown>) => ({
+      ...a,
+      ...(includeFrontmatter ? { includeFrontmatter } : {}),
+    }));
+
+    return z.array(collabAudienceSchema).parse(enriched);
   }
 
   // GET /api/collab/checksums

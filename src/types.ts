@@ -91,6 +91,7 @@ export const collabAudienceSchema = z.object({
   name: z.string(),
   slug: z.string(),
   rules: z.array(audienceRuleSchema),
+  includeFrontmatter: z.array(z.string()).optional(),
 });
 
 export type CollabAudience = z.output<typeof collabAudienceSchema>;
