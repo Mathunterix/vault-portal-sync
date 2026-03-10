@@ -1,6 +1,6 @@
 # Vault Portal Sync
 
-Plugin Obsidian pour synchroniser votre vault vers [Vault Portal](https://portal.matthieucousin.com) via l'API collab.
+Plugin Obsidian pour synchroniser votre vault vers Vault Portal via l'API collab.
 
 ## Installation (via BRAT)
 

@@ -125,7 +125,7 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("URL du portail")
-      .setDesc("Ex: https://portal.matthieucousin.com")
+      .setDesc("URL fournie par l'administrateur du portail")
       .addText((text) =>
         text
           .setPlaceholder("https://...")
