@@ -1,0 +1,9 @@
+{
+	"id": "vault-portal-sync",
+	"name": "Vault Portal Sync",
+	"version": "0.1.0",
+	"minAppVersion": "0.15.0",
+	"description": "Synchronise votre vault Obsidian vers Vault Portal via l'API collab",
+	"author": "Matthieu Cousin",
+	"isDesktopOnly": true
+}

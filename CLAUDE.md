@@ -1,61 +1,39 @@
-# projet
+# Vault Portal Sync
+
+Plugin Obsidian pour synchroniser un vault vers Vault Portal via l'API collab.
 
 ## stack
 
-next.js 15, typescript strict, prisma, supabase, tailwind, shadcn/ui
+TypeScript strict, Obsidian Plugin API, esbuild, Zod
 
----
+## structure
 
-## regles
-
-voir `.claude/rules/` pour les conventions de code
-
----
-
-## contexte
-
-voir `docs/memory-bank/` pour la documentation projet :
-- `context.md` : projet, focus actuel, features en cours
-- `features/` : doc par feature
-- `project-brief.md` : vision (optionnel, si bmad)
-- `architecture.md` : stack et decisions (optionnel, si bmad)
-
----
+```
+src/
+  main.ts           — lifecycle plugin, commandes, ribbon, status bar
+  settings.ts       — settings tab (connexion, audiences, folder picker, sync)
+  api.ts            — client HTTP (requestUrl, Bearer token)
+  types.ts          — schemas Zod + types
+  sync/
+    engine.ts       — orchestrateur sync (diff, upload batch, cleanup)
+    scope-resolver.ts — resolution scope (metadataCache, rules, folders)
+    checksum.ts     — SHA-256 via Web Crypto
+    watcher.ts      — vault events (modify/create/delete/rename) + debounce
+    attachments.ts  — extraction refs PJ + upload binaires
+  ui/
+    folder-suggest.ts — AbstractInputSuggest pour folder picker
+```
 
 ## commandes
 
-### workflow quotidien
 | commande | usage |
 |----------|-------|
-| `/start` | debut session |
-| `/pick-feature` | extraire features du PRD → plans |
-| `/plan` | planifier feature (sans PRD) |
-| `/create-tasks` | creer taches depuis plan |
-| `/implement` | executer tache |
-| `/log` | log rapide petite modif |
-| `/doc` | documenter + archiver feature |
+| `npm run dev` | watch mode (dev) |
+| `npm run build` | type check + build prod |
 
-### projet existant (brownfield)
-| commande | usage |
-|----------|-------|
-| `/init-existing` | initialiser vibedev sur un projet existant |
+## conventions
 
-### nouveau projet (bmad)
-| commande | usage |
-|----------|-------|
-| `/bmad/analyst` | brainstorm + research |
-| `/bmad/architect` | architecture + decisions |
-| `/bmad/pm` | prd (optionnel) |
-
-### maintenance
-| commande | usage |
-|----------|-------|
-| `/suggest-rules` | proposer nouvelles rules (auto dans /doc) |
-| `/update-conventions` | regenerer structure.md + tech-stack.md |
-| `/refactor-claude-md` | nettoyer CLAUDE.md si trop long |
-
----
-
-## [projet specifique]
-
-<!-- ajouter ici les conventions specifiques a ce projet -->
+- HTTP via `requestUrl` (pas de fetch, pas de Supabase client)
+- Pas de `any` — TypeScript strict
+- Validation Zod sur toutes les reponses API
+- Distribution BRAT (GitHub releases)

@@ -1,0 +1,389 @@
+/* ── Status ── */
+
+.vps-status {
+  padding: 4px 0;
+  font-size: 0.9em;
+}
+
+.vps-status-ok {
+  color: var(--text-success);
+}
+
+.vps-status-error {
+  color: var(--text-error);
+}
+
+/* ── Audience section ── */
+
+.vps-audience-section {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+}
+
+.vps-audience-section h3 {
+  margin-top: 0;
+}
+
+.vps-audience-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.vps-audience-header h3 {
+  margin: 0;
+}
+
+/* ── Save indicator ── */
+
+.vps-save-indicator {
+  font-size: 0.8em;
+  transition: opacity 0.2s;
+}
+
+.vps-save-saving {
+  color: var(--text-muted);
+}
+
+.vps-save-saved {
+  color: var(--text-success);
+}
+
+.vps-save-error {
+  color: var(--text-error);
+}
+
+/* ── AND/OR explanation ── */
+
+.vps-andor-explanation {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+/* ── Badges ── */
+
+.vps-badge-and {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 0.75em;
+  font-weight: 600;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+/* ── AND divider (between rules in same group) ── */
+
+.vps-and-divider {
+  padding: 2px 0 2px 4px;
+}
+
+.vps-badge-or {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-weight: 600;
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  background: transparent;
+}
+
+/* ── Group ── */
+
+.vps-group {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 4px;
+}
+
+.vps-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.vps-group-label {
+  font-size: 0.85em;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ── OR divider ── */
+
+.vps-or-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.vps-or-divider hr {
+  flex: 1;
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 0;
+}
+
+/* ── Rule row ── */
+
+.vps-rule-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 8px;
+}
+
+/* ── Fields ── */
+
+.vps-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vps-field-type {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.vps-field-value {
+  flex: 1;
+  min-width: 0;
+}
+
+.vps-field-direction {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.vps-field-label {
+  font-size: 0.75em;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* ── Form elements ── */
+
+.vps-type-select,
+.vps-direction-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.9em;
+}
+
+.vps-value-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.9em;
+}
+
+/* ── Buttons ── */
+
+.vps-del-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-error);
+  cursor: pointer;
+  font-size: 1.1em;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin-bottom: 4px;
+}
+
+.vps-del-btn:hover {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+
+.vps-add-btn-ghost {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.vps-add-btn-ghost:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.vps-add-group-btn {
+  width: 100%;
+  padding: 8px;
+  margin-top: 8px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9em;
+  text-align: center;
+}
+
+.vps-add-group-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-style: solid;
+}
+
+/* ── Separators ── */
+
+.vps-main-separator {
+  border: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 16px 0;
+}
+
+/* ── Exclusion section ── */
+
+.vps-exclusion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.vps-exclusion-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vps-section-title {
+  font-size: 0.95em;
+  font-weight: 600;
+}
+
+.vps-section-desc {
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+/* ── Utility ── */
+
+.vps-muted {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.vps-pad {
+  padding: 8px 0;
+}
+
+.vps-empty-state {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.vps-error {
+  color: var(--text-error);
+}
+
+/* ── Preview button ── */
+
+.vps-preview-row-btn {
+  margin-top: 12px;
+}
+
+.vps-preview-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
+.vps-preview-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* ── Preview modal ── */
+
+.vps-preview-modal {
+  max-height: 70vh;
+}
+
+.vps-preview-search {
+  width: 100%;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.9em;
+}
+
+.vps-preview-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.vps-preview-list .vps-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vps-preview-list .vps-preview-row:last-child {
+  border-bottom: none;
+}
+
+.vps-preview-name {
+  font-weight: 500;
+}
+
+.vps-preview-path {
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+/* ── Note suggestion (for AbstractInputSuggest) ── */
+
+.vps-note-suggestion {
+  display: flex;
+  flex-direction: column;
+}
+
+.vps-note-suggestion .vps-note-basename {
+  font-weight: 500;
+}
+
+.vps-note-suggestion .vps-note-path {
+  font-size: 0.8em;
+  color: var(--text-muted);
+}

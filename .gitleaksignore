@@ -1,6 +1,0 @@
-# Gitleaks ignore file
-# Ajouter ici les faux positifs (format: hash du secret ou chemin)
-#
-# Exemples:
-# abc123def456  # hash d'un faux positif
-# path/to/file.md:10  # ligne specifique
