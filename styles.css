@@ -367,9 +367,48 @@
   font-weight: 500;
 }
 
+.vps-preview-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.7em;
+  font-weight: 500;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 .vps-preview-path {
   font-size: 0.8em;
   color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ── Context files section ── */
+
+.vps-context-section {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.vps-context-section h3 {
+  margin: 0 0 4px 0;
+  font-size: 0.95em;
+}
+
+.vps-context-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.vps-context-name {
+  font-size: 0.9em;
+  font-weight: 500;
 }
 
 /* ── Note suggestion (for AbstractInputSuggest) ── */

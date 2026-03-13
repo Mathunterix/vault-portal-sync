@@ -1,9 +1,10 @@
-import { App, Modal, Notice, PluginSettingTab, Setting, TFile } from "obsidian";
+import { App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
 import type VaultPortalSync from "./main";
 import { FolderSuggest } from "./ui/folder-suggest";
 import { TagSuggest } from "./ui/tag-suggest";
 import { NoteSuggest } from "./ui/note-suggest";
 import { CollabAudience, LocalRule, RuleDirection, RuleType } from "./types";
+import type { ScopeBreakdown } from "./sync/scope-resolver";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -32,25 +33,30 @@ const DIRECTION_OPTIONS: { value: RuleDirection; label: string }[] = [
 // ---------------------------------------------------------------------------
 
 class ScopePreviewModal extends Modal {
-  private files: TFile[];
+  private breakdown: ScopeBreakdown;
   private audienceName: string;
 
-  constructor(app: App, files: TFile[], audienceName: string) {
+  constructor(app: App, breakdown: ScopeBreakdown, audienceName: string) {
     super(app);
-    this.files = files.sort((a, b) => a.path.localeCompare(b.path));
+    this.breakdown = breakdown;
     this.audienceName = audienceName;
   }
 
   onOpen(): void {
     const { contentEl } = this;
+    const { ruleFiles, audienceFmFiles } = this.breakdown;
     contentEl.empty();
     contentEl.addClass("vps-preview-modal");
 
+    const visibleFiles = [...ruleFiles, ...audienceFmFiles].sort((a, b) =>
+      a.path.localeCompare(b.path),
+    );
+
     contentEl.createEl("h2", {
-      text: `Fichiers en scope — ${this.audienceName}`,
+      text: `Fichiers partages — ${this.audienceName}`,
     });
     contentEl.createEl("p", {
-      text: `${this.files.length} fichier(s) seront synchronises.`,
+      text: `${visibleFiles.length} fichier(s) visibles par l'audience.`,
       cls: "vps-muted",
     });
 
@@ -66,10 +72,10 @@ class ScopePreviewModal extends Modal {
     const renderList = (filter: string) => {
       listEl.empty();
       const filtered = filter
-        ? this.files.filter((f) =>
+        ? visibleFiles.filter((f) =>
             f.path.toLowerCase().includes(filter.toLowerCase()),
           )
-        : this.files;
+        : visibleFiles;
 
       if (filtered.length === 0) {
         listEl.createEl("div", {
@@ -79,11 +85,16 @@ class ScopePreviewModal extends Modal {
         return;
       }
 
+      const fmPaths = new Set(audienceFmFiles.map((f) => f.path));
+
       for (const file of filtered) {
         const row = listEl.createDiv({ cls: "vps-preview-row" });
         const folder = file.path.replace(/[^/]+$/, "");
         const name = file.basename;
         row.createEl("span", { text: name, cls: "vps-preview-name" });
+        if (fmPaths.has(file.path)) {
+          row.createEl("span", { text: "audience", cls: "vps-preview-tag" });
+        }
         row.createEl("span", { text: folder, cls: "vps-preview-path" });
       }
     };
@@ -108,6 +119,7 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
   private saveIndicators: Map<string, HTMLElement> = new Map();
   private badgeElements: Map<string, HTMLElement> = new Map();
   private forceHydrate = true;
+  private editedAudiences = new Set<string>();
 
   constructor(app: App, plugin: VaultPortalSync) {
     super(app, plugin);
@@ -132,7 +144,7 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.portalUrl)
           .onChange(async (value) => {
             this.plugin.settings.portalUrl = value.replace(/\/+$/, "");
-            await this.plugin.saveSettings();
+            await this.plugin.saveSettings(true);
           }),
       );
 
@@ -145,7 +157,7 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.token)
           .onChange(async (value) => {
             this.plugin.settings.token = value.trim();
-            await this.plugin.saveSettings();
+            await this.plugin.saveSettings(true);
           });
         text.inputEl.type = "password";
       });
@@ -175,46 +187,49 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     containerEl.createEl("h2", { text: "Synchronisation" });
 
     new Setting(containerEl)
-      .setName("Active")
-      .setDesc("Activer/desactiver la synchronisation")
+      .setName("Synchronisation automatique")
+      .setDesc("Active la sync a la modif et/ou periodique")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.enabled)
           .onChange(async (value) => {
             this.plugin.settings.enabled = value;
-            await this.plugin.saveSettings();
+            await this.plugin.saveSettings(true);
+            this.display(); // re-render to show/hide sub-settings
           }),
       );
 
-    new Setting(containerEl)
-      .setName("Sync au save")
-      .setDesc(
-        "Synchroniser automatiquement quand un fichier est modifie (debounce 5s)",
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.syncOnSave)
-          .onChange(async (value) => {
-            this.plugin.settings.syncOnSave = value;
-            await this.plugin.saveSettings();
-          }),
-      );
+    if (this.plugin.settings.enabled) {
+      new Setting(containerEl)
+        .setName("Sync a la modification")
+        .setDesc(
+          "Synchronise automatiquement quand un fichier partage est modifie",
+        )
+        .addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.syncOnSave)
+            .onChange(async (value) => {
+              this.plugin.settings.syncOnSave = value;
+              await this.plugin.saveSettings(true);
+            }),
+        );
 
-    new Setting(containerEl)
-      .setName("Intervalle de sync (minutes)")
-      .setDesc("Sync periodique en arriere-plan (1-120 min)")
-      .addText((text) =>
-        text
-          .setPlaceholder("15")
-          .setValue(String(this.plugin.settings.syncIntervalMinutes))
-          .onChange(async (value) => {
-            const num = parseInt(value, 10);
-            if (!isNaN(num) && num >= 1 && num <= 120) {
-              this.plugin.settings.syncIntervalMinutes = num;
-              await this.plugin.saveSettings();
-            }
-          }),
-      );
+      new Setting(containerEl)
+        .setName("Intervalle de sync (minutes)")
+        .setDesc("Sync periodique en arriere-plan (1-120 min)")
+        .addText((text) =>
+          text
+            .setPlaceholder("15")
+            .setValue(String(this.plugin.settings.syncIntervalMinutes))
+            .onChange(async (value) => {
+              const num = parseInt(value, 10);
+              if (!isNaN(num) && num >= 1 && num <= 120) {
+                this.plugin.settings.syncIntervalMinutes = num;
+                await this.plugin.saveSettings(true);
+              }
+            }),
+        );
+    }
 
     const lastSyncText = this.plugin.lastSyncTime
       ? `Dernier sync: ${this.plugin.lastSyncTime.toLocaleTimeString()}`
@@ -275,7 +290,6 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
   // ── Audiences ──
 
   private async displayAudiences(containerEl: HTMLElement): Promise<void> {
-    containerEl.createEl("h2", { text: "Mes espaces" });
     try {
       this.audiences = await this.plugin.api.getAudiences();
     } catch {
@@ -285,6 +299,35 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
       });
       return;
     }
+
+    // ── Context files block (above audiences) ──
+    const scopeResolver = this.plugin.getScopeResolver();
+    const configs = this.plugin.settings.audienceConfigs ?? [];
+    const contextFiles = scopeResolver.resolveContextFiles(
+      this.audiences,
+      configs,
+    );
+
+    if (contextFiles.length > 0) {
+      const ctxSection = containerEl.createDiv({ cls: "vps-context-section" });
+      ctxSection.createEl("h3", { text: "Fichiers de contexte" });
+      ctxSection.createEl("p", {
+        text: "Synchronises automatiquement (metadonnees). Utilises par le chatbot, non visibles par les audiences.",
+        cls: "vps-muted",
+      });
+      for (const { file, key } of contextFiles) {
+        const row = ctxSection.createDiv({ cls: "vps-context-row" });
+        row.createEl("span", { text: file.basename, cls: "vps-context-name" });
+        row.createEl("span", { text: key, cls: "vps-preview-tag" });
+        row.createEl("span", {
+          text: file.path.replace(/[^/]+$/, ""),
+          cls: "vps-preview-path",
+        });
+      }
+    }
+
+    // ── Audiences ──
+    containerEl.createEl("h2", { text: "Mes espaces" });
     for (const audience of this.audiences) {
       this.displayAudienceSection(containerEl, audience);
     }
@@ -310,7 +353,8 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     // Hydrate local rules from server on first load or explicit refresh.
     // After that, local rules are the source of truth (to preserve empty drafts).
     const hasLocalRules = config.rules && config.rules.length > 0;
-    if (!hasLocalRules || this.forceHydrate) {
+    const wasEdited = this.editedAudiences.has(audience.id);
+    if ((!hasLocalRules && !wasEdited) || this.forceHydrate) {
       const vaultSlug = this.plugin.connectionInfo?.vaultSlug ?? "";
       config.rules = audience.rules.map((r) => ({
         ruleType: r.ruleType as RuleType,
@@ -490,12 +534,12 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
       cls: "vps-preview-btn",
     });
     const badgeSpan = previewBtn.createEl("span", {
-      text: `${fileCount} fichiers en scope`,
+      text: `${fileCount} fichiers partages`,
     });
     this.badgeElements.set(audience.id, badgeSpan);
     previewBtn.addEventListener("click", () => {
-      const files = scopeResolver.listInScope(audience, config);
-      new ScopePreviewModal(this.app, files, audience.name).open();
+      const breakdown = scopeResolver.listInScopeDetailed(audience, config);
+      new ScopePreviewModal(this.app, breakdown, audience.name).open();
     });
   }
 
@@ -687,6 +731,7 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     audienceId: string,
     rules: LocalRule[],
   ): Promise<void> {
+    this.editedAudiences.add(audienceId);
     try {
       const validRules = rules.filter((r) => r.value.trim() !== "");
       await this.plugin.api.saveRules(
@@ -749,6 +794,6 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     );
     const scopeResolver = this.plugin.getScopeResolver();
     const count = scopeResolver.countInScope(audience, config);
-    el.setText(`${count} fichiers en scope`);
+    el.setText(`${count} fichiers partages`);
   }
 }

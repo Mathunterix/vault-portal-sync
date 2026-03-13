@@ -1,6 +1,17 @@
 import { App, TFile } from "obsidian";
 import { CollabAudience, AudienceFolderConfig, LocalRule } from "../types";
 
+export interface ScopeBreakdown {
+  /** Files matched by rules (folders/tags/linked) — visible wiki */
+  ruleFiles: TFile[];
+  /** Files with frontmatter `audience: slug` matching this audience — visible wiki */
+  audienceFmFiles: TFile[];
+  /** Files with context frontmatter (user-portal, audience-portal) — chatbot only, not audience-specific */
+  contextFiles: TFile[];
+  /** All files combined (for sync) */
+  all: TFile[];
+}
+
 /**
  * Resolves which vault files are "in scope" for a given audience,
  * using Obsidian's metadataCache (already-parsed frontmatter, tags, links).
@@ -19,8 +30,18 @@ export class ScopeResolver {
     audience: CollabAudience,
     localConfig: AudienceFolderConfig | undefined,
   ): TFile[] {
+    return this.resolveDetailed(audience, localConfig).all;
+  }
+
+  /**
+   * Return a detailed breakdown of files in scope, categorized by reason.
+   */
+  resolveDetailed(
+    audience: CollabAudience,
+    localConfig: AudienceFolderConfig | undefined,
+  ): ScopeBreakdown {
     const allFiles = this.app.vault.getMarkdownFiles();
-    const inScope = new Set<TFile>();
+    const ruleSet = new Set<TFile>();
 
     // --- Collect all INCLUDE rules (local rules take priority, fallback to server) ---
     const rules: LocalRule[] =
@@ -75,37 +96,66 @@ export class ScopeResolver {
 
       // OR = union between groups
       if (groupFiles) {
-        for (const f of groupFiles) inScope.add(f);
+        for (const f of groupFiles) ruleSet.add(f);
       }
     }
 
     // --- Legacy local folder overrides ---
     if (localConfig) {
       for (const folder of localConfig.folders) {
-        this.matchFolder(allFiles, folder, inScope);
+        this.matchFolder(allFiles, folder, ruleSet);
       }
     }
 
-    // --- Always include files with special frontmatter keys ---
+    // --- Frontmatter-based files (categorized) ---
     const frontmatterKeys = audience.includeFrontmatter ?? [
       "user-portal",
       "audience",
       "audience-portal",
     ];
+    const contextKeys = ["user-portal", "audience-portal"];
+    const audienceFmSet = new Set<TFile>();
+    const contextSet = new Set<TFile>();
+
     for (const file of allFiles) {
       const cache = this.app.metadataCache.getFileCache(file);
       const fm = cache?.frontmatter;
-      if (fm && frontmatterKeys.some((key) => key in fm)) {
-        inScope.add(file);
+      if (!fm) continue;
+
+      // Context files (user-portal, audience-portal) — not audience-specific
+      const matchedContextKey = contextKeys.find(
+        (key) => frontmatterKeys.includes(key) && key in fm,
+      );
+      if (matchedContextKey && !ruleSet.has(file)) {
+        contextSet.add(file);
+        continue;
+      }
+
+      // Audience frontmatter — only if matches THIS audience slug
+      if (
+        frontmatterKeys.includes("audience") &&
+        "audience" in fm &&
+        !ruleSet.has(file)
+      ) {
+        const fmAudience = fm["audience"];
+        const slugs = Array.isArray(fmAudience)
+          ? fmAudience
+          : typeof fmAudience === "string"
+            ? [fmAudience]
+            : [];
+        if (slugs.includes(audience.slug)) {
+          audienceFmSet.add(file);
+        }
       }
     }
 
-    // --- Post-filter EXCLUDE rules (OR combinator) ---
+    // --- Post-filter EXCLUDE rules on rule files + audience FM files (OR combinator) ---
+    const toExcludeFrom = new Set([...ruleSet, ...audienceFmSet]);
     const excluded = new Set<TFile>();
     for (const rule of excludeRules) {
       switch (rule.ruleType) {
         case "EXCLUDE_FOLDER":
-          for (const f of inScope) {
+          for (const f of toExcludeFrom) {
             if (
               f.path.startsWith(
                 rule.value.endsWith("/") ? rule.value : rule.value + "/",
@@ -115,12 +165,12 @@ export class ScopeResolver {
           }
           break;
         case "EXCLUDE_TAG":
-          for (const f of inScope) {
+          for (const f of toExcludeFrom) {
             if (this.fileHasTag(f, rule.value)) excluded.add(f);
           }
           break;
         case "EXCLUDE_LINKED":
-          for (const f of inScope) {
+          for (const f of toExcludeFrom) {
             if (this.isLinkedTo(f, rule.value, rule.direction)) excluded.add(f);
           }
           break;
@@ -128,18 +178,26 @@ export class ScopeResolver {
     }
 
     for (const f of excluded) {
-      inScope.delete(f);
+      ruleSet.delete(f);
+      audienceFmSet.delete(f);
     }
 
-    // Filter out files with share: false in frontmatter
-    const result: TFile[] = [];
-    for (const f of inScope) {
+    // --- Filter out share: false ---
+    const isShareable = (f: TFile): boolean => {
       const cache = this.app.metadataCache.getFileCache(f);
-      if (cache?.frontmatter?.["share"] === false) continue;
-      result.push(f);
-    }
+      return cache?.frontmatter?.["share"] !== false;
+    };
 
-    return result;
+    const ruleFiles = [...ruleSet].filter(isShareable);
+    const audienceFmFiles = [...audienceFmSet].filter(isShareable);
+    const contextFiles = [...contextSet].filter(isShareable);
+
+    return {
+      ruleFiles,
+      audienceFmFiles,
+      contextFiles,
+      all: [...ruleFiles, ...audienceFmFiles, ...contextFiles],
+    };
   }
 
   /**
@@ -160,23 +218,66 @@ export class ScopeResolver {
   }
 
   /**
-   * Count files in scope for a single audience (for display in settings).
+   * Count audience-specific files (rules + audience frontmatter, excluding context).
    */
   countInScope(
     audience: CollabAudience,
     localConfig: AudienceFolderConfig | undefined,
   ): number {
-    return this.resolve(audience, localConfig).length;
+    const bd = this.resolveDetailed(audience, localConfig);
+    return bd.ruleFiles.length + bd.audienceFmFiles.length;
   }
 
   /**
-   * Return the list of files in scope (for preview).
+   * Return the detailed breakdown for preview.
    */
-  listInScope(
+  listInScopeDetailed(
     audience: CollabAudience,
     localConfig: AudienceFolderConfig | undefined,
-  ): TFile[] {
-    return this.resolve(audience, localConfig);
+  ): ScopeBreakdown {
+    return this.resolveDetailed(audience, localConfig);
+  }
+
+  /**
+   * Collect all context files (user-portal, audience-portal) across all audiences.
+   * Deduplicated. These files are not audience-specific.
+   */
+  resolveContextFiles(
+    audiences: CollabAudience[],
+    _localConfigs: AudienceFolderConfig[],
+  ): { file: TFile; key: string }[] {
+    const seen = new Set<string>();
+    const result: { file: TFile; key: string }[] = [];
+    const allFiles = this.app.vault.getMarkdownFiles();
+    const contextKeys = ["user-portal", "audience-portal"];
+
+    // Use includeFrontmatter from first audience (same for all)
+    const frontmatterKeys = audiences[0]?.includeFrontmatter ?? [
+      "user-portal",
+      "audience",
+      "audience-portal",
+    ];
+
+    for (const file of allFiles) {
+      if (seen.has(file.path)) continue;
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm) continue;
+      if (fm["share"] === false) continue;
+
+      for (const key of contextKeys) {
+        if (
+          frontmatterKeys.includes(key) &&
+          key in fm &&
+          !seen.has(file.path)
+        ) {
+          seen.add(file.path);
+          result.push({ file, key });
+        }
+      }
+    }
+
+    return result;
   }
 
   // ---- private helpers ----

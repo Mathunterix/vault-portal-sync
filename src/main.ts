@@ -101,22 +101,23 @@ export default class VaultPortalSync extends Plugin {
     }
   }
 
-  async saveSettings(): Promise<void> {
+  async saveSettings(restartSync = false): Promise<void> {
     await this.saveData(this.settings);
     this.api.updateConfig(this.settings.portalUrl, this.settings.token);
 
-    // Restart sync with new settings
-    this.stopSync();
-    if (
-      this.settings.enabled &&
-      this.settings.portalUrl &&
-      this.settings.token
-    ) {
-      this.startSync();
+    if (restartSync) {
+      this.stopSync();
+      if (
+        this.settings.enabled &&
+        this.settings.portalUrl &&
+        this.settings.token
+      ) {
+        this.startSync();
+      }
     }
   }
 
-  async runFullSync(): Promise<void> {
+  async runFullSync(silent = false): Promise<void> {
     if (!this.settings.portalUrl || !this.settings.token) {
       new Notice("Vault Portal: configure l'URL et le token d'abord");
       return;
@@ -141,16 +142,22 @@ export default class VaultPortalSync extends Plugin {
       this.lastSyncTime = new Date();
       this.lastSyncStats = stats;
 
-      const total = stats.created + stats.updated;
-      if (stats.errors.length > 0) {
+      const hasChanges = stats.created + stats.updated + stats.deleted > 0;
+      const hasErrors = stats.errors.length > 0;
+
+      if (hasErrors) {
+        const total = stats.created + stats.updated;
         new Notice(
           `Vault Portal: ${total} synces, ${stats.deleted} supprimes, ${stats.errors.length} erreur(s)`,
         );
         this.updateStatusBar("error");
-      } else {
+      } else if (!silent || hasChanges) {
         new Notice(
           `Vault Portal: ${stats.created} crees, ${stats.updated} maj, ${stats.deleted} supprimes`,
         );
+        this.updateStatusBar("synced");
+      } else {
+        // Silent + no changes: just update status bar, no notification
         this.updateStatusBar("synced");
       }
     } catch (err) {
@@ -183,11 +190,11 @@ export default class VaultPortalSync extends Plugin {
       this.watcher.start();
     }
 
-    // Periodic sync
+    // Periodic sync (silent: only notify when there are actual changes)
     const intervalMs = this.settings.syncIntervalMinutes * 60 * 1000;
     this.intervalId = this.registerInterval(
       window.setInterval(() => {
-        this.runFullSync();
+        this.runFullSync(true);
       }, intervalMs),
     ) as unknown as number;
 
@@ -199,8 +206,10 @@ export default class VaultPortalSync extends Plugin {
       this.watcher.stop();
       this.watcher = null;
     }
-    // intervalId is cleaned up by Obsidian via registerInterval
-    this.intervalId = null;
+    if (this.intervalId != null) {
+      window.clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
   }
 
   private async handleWatcherFlush(files: TFile[]): Promise<void> {
