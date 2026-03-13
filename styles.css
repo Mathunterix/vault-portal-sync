@@ -170,6 +170,45 @@
   color: var(--text-muted);
 }
 
+/* ── Operator (est / n'est pas) ── */
+
+.vps-field-operator {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.vps-operator-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.9em;
+}
+
+.vps-operator-neg {
+  color: var(--text-warning, #b08800);
+  border-color: var(--text-warning, #b08800);
+}
+
+/* ── Negated rule row ── */
+
+.vps-rule-row.vps-negated {
+  border-left: 2px solid var(--text-warning, #b08800);
+  padding-left: 8px;
+}
+
+/* ── Group summary ── */
+
+.vps-group-summary {
+  font-size: 0.75em;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
 /* ── Form elements ── */
 
 .vps-type-select,

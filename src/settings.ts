@@ -186,6 +186,11 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     // ── Sync settings ──
     containerEl.createEl("h2", { text: "Synchronisation" });
 
+    const syncSubOptions = containerEl.createDiv();
+    syncSubOptions.style.display = this.plugin.settings.enabled
+      ? "block"
+      : "none";
+
     new Setting(containerEl)
       .setName("Synchronisation automatique")
       .setDesc("Active la sync a la modif et/ou periodique")
@@ -194,42 +199,43 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.enabled)
           .onChange(async (value) => {
             this.plugin.settings.enabled = value;
+            syncSubOptions.style.display = value ? "block" : "none";
             await this.plugin.saveSettings(true);
-            this.display(); // re-render to show/hide sub-settings
           }),
       );
 
-    if (this.plugin.settings.enabled) {
-      new Setting(containerEl)
-        .setName("Sync a la modification")
-        .setDesc(
-          "Synchronise automatiquement quand un fichier partage est modifie",
-        )
-        .addToggle((toggle) =>
-          toggle
-            .setValue(this.plugin.settings.syncOnSave)
-            .onChange(async (value) => {
-              this.plugin.settings.syncOnSave = value;
-              await this.plugin.saveSettings(true);
-            }),
-        );
+    // Move sub-options container after the toggle (DOM order)
+    containerEl.appendChild(syncSubOptions);
 
-      new Setting(containerEl)
-        .setName("Intervalle de sync (minutes)")
-        .setDesc("Sync periodique en arriere-plan (1-120 min)")
-        .addText((text) =>
-          text
-            .setPlaceholder("15")
-            .setValue(String(this.plugin.settings.syncIntervalMinutes))
-            .onChange(async (value) => {
-              const num = parseInt(value, 10);
-              if (!isNaN(num) && num >= 1 && num <= 120) {
-                this.plugin.settings.syncIntervalMinutes = num;
-                await this.plugin.saveSettings(true);
-              }
-            }),
-        );
-    }
+    new Setting(syncSubOptions)
+      .setName("Sync a la modification")
+      .setDesc(
+        "Synchronise automatiquement quand un fichier partage est modifie",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.syncOnSave)
+          .onChange(async (value) => {
+            this.plugin.settings.syncOnSave = value;
+            await this.plugin.saveSettings(true);
+          }),
+      );
+
+    new Setting(syncSubOptions)
+      .setName("Intervalle de sync (minutes)")
+      .setDesc("Sync periodique en arriere-plan (1-120 min)")
+      .addText((text) =>
+        text
+          .setPlaceholder("15")
+          .setValue(String(this.plugin.settings.syncIntervalMinutes))
+          .onChange(async (value) => {
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 1 && num <= 120) {
+              this.plugin.settings.syncIntervalMinutes = num;
+              await this.plugin.saveSettings(true);
+            }
+          }),
+      );
 
     const lastSyncText = this.plugin.lastSyncTime
       ? `Dernier sync: ${this.plugin.lastSyncTime.toLocaleTimeString()}`
@@ -254,7 +260,6 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
             }
             btn.setDisabled(false);
             btn.setButtonText("Sync");
-            this.display();
           }),
       );
   }
@@ -369,12 +374,14 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
 
     if (!config.rules) config.rules = [];
     const rules = config.rules;
-    const includeRules = rules.filter((r) => !r.ruleType.startsWith("EXCLUDE"));
-    const excludeRules = rules.filter((r) => r.ruleType.startsWith("EXCLUDE"));
+    const globalExcludeRules = rules.filter(
+      (r) => r.ruleType.startsWith("EXCLUDE") && r.groupId === -1,
+    );
+    const groupScopedRules = rules.filter((r) => (r.groupId ?? 0) >= 0);
 
-    // Group include rules by groupId
+    // Group all rules (INCLUDE + group-scoped EXCLUDE) by groupId
     const groups = new Map<number, LocalRule[]>();
-    for (const rule of includeRules) {
+    for (const rule of groupScopedRules) {
       const gid = rule.groupId ?? 0;
       if (!groups.has(gid)) groups.set(gid, []);
       groups.get(gid)!.push(rule);
@@ -409,7 +416,7 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     explanationEl.createSpan({ text: "OR", cls: "vps-badge-or" });
     explanationEl.createSpan({ text: "." });
 
-    // ── Inclusion groups ──
+    // ── Groups (INCLUDE + group-scoped EXCLUDE) ──
     if (sortedGroupIds.length === 0) {
       section.createEl("div", {
         text: "Aucune regle d'inclusion. Ajoutez un groupe pour commencer.",
@@ -465,8 +472,28 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
             groupRules[ri]!,
             rules,
             audience.id,
-            INCLUDE_TYPES,
+            true,
           );
+        }
+
+        // Group summary
+        const filledRules = groupRules.filter((r) => r.value.trim());
+        if (filledRules.length > 0) {
+          const summaryParts = filledRules.map((r) => {
+            const neg = r.ruleType.startsWith("EXCLUDE");
+            const base = r.ruleType.replace(/^(INCLUDE_|EXCLUDE_)/, "");
+            const typeLabel =
+              base === "FOLDER" ? "dossier" : base === "TAG" ? "tag" : "lie a";
+            const shortVal =
+              r.value.split("/").filter(Boolean).pop() || r.value;
+            return neg
+              ? `sauf ${typeLabel} "${shortVal}"`
+              : `${typeLabel} "${shortVal}"`;
+          });
+          groupEl.createEl("p", {
+            text: summaryParts.join(", "),
+            cls: "vps-group-summary",
+          });
         }
       }
     }
@@ -492,15 +519,15 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     // ── Separator ──
     section.createEl("hr", { cls: "vps-main-separator" });
 
-    // ── Exclusions ──
+    // ── Global exclusions ──
     const exHeader = section.createDiv({ cls: "vps-exclusion-header" });
     const exInfo = exHeader.createDiv();
     exInfo.createEl("span", {
-      text: "Exclusions",
+      text: "Exclusions generales",
       cls: "vps-section-title",
     });
     exInfo.createEl("span", {
-      text: "Retirent des documents du scope apres les inclusions",
+      text: "Retirent des documents de TOUS les groupes",
       cls: "vps-section-desc",
     });
     const addExBtn = exHeader.createEl("button", {
@@ -517,14 +544,14 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
       this.refreshAudienceSection(audience.id);
     });
 
-    if (excludeRules.length === 0) {
+    if (globalExcludeRules.length === 0) {
       section.createEl("div", {
-        text: "Aucune exclusion",
+        text: "Aucune exclusion generale",
         cls: "vps-muted vps-pad",
       });
     } else {
-      for (const rule of excludeRules) {
-        this.renderRuleRow(section, rule, rules, audience.id, EXCLUDE_TYPES);
+      for (const rule of globalExcludeRules) {
+        this.renderRuleRow(section, rule, rules, audience.id, false);
       }
     }
 
@@ -545,23 +572,52 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
 
   // ── Rule row ──
 
+  /**
+   * @param isGroupScoped true = rule in a group (show IS/IS NOT toggle), false = global exclusion
+   */
   private renderRuleRow(
     container: HTMLElement,
     rule: LocalRule,
     allRules: LocalRule[],
     audienceId: string,
-    typeOptions: { value: RuleType; label: string }[],
+    isGroupScoped: boolean,
   ): void {
-    const row = container.createDiv({ cls: "vps-rule-row" });
+    const isNeg = rule.ruleType.startsWith("EXCLUDE");
+    const row = container.createDiv({
+      cls: `vps-rule-row${isNeg && isGroupScoped ? " vps-negated" : ""}`,
+    });
 
-    // Type field
+    // Type field (base type: Dossier/Tag/Lie a)
+    const baseTypes = [
+      { value: "FOLDER", label: "Dossier" },
+      { value: "TAG", label: "Tag" },
+      { value: "LINKED", label: "Lie a" },
+    ];
+    const currentBase = rule.ruleType.replace(/^(INCLUDE_|EXCLUDE_)/, "");
+
     const typeField = row.createDiv({ cls: "vps-field vps-field-type" });
     typeField.createEl("label", { text: "Type", cls: "vps-field-label" });
     const typeSelect = typeField.createEl("select", { cls: "vps-type-select" });
-    for (const opt of typeOptions) {
+    for (const opt of baseTypes) {
       const optEl = typeSelect.createEl("option", { text: opt.label });
       optEl.value = opt.value;
-      if (opt.value === rule.ruleType) optEl.selected = true;
+      if (opt.value === currentBase) optEl.selected = true;
+    }
+
+    // Operator field (est / n'est pas) — only in group-scoped rules
+    let operatorSelect: HTMLSelectElement | null = null;
+    if (isGroupScoped) {
+      const opField = row.createDiv({ cls: "vps-field vps-field-operator" });
+      opField.createEl("label", { text: "Operateur", cls: "vps-field-label" });
+      operatorSelect = opField.createEl("select", {
+        cls: `vps-operator-select${isNeg ? " vps-operator-neg" : ""}`,
+      });
+      const isOpt = operatorSelect.createEl("option", { text: "est" });
+      isOpt.value = "IS";
+      if (!isNeg) isOpt.selected = true;
+      const notOpt = operatorSelect.createEl("option", { text: "n'est pas" });
+      notOpt.value = "NOT";
+      if (isNeg) notOpt.selected = true;
     }
 
     // Value field
@@ -604,17 +660,21 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     });
 
     // ── Events ──
+    const buildRuleType = (base: string, neg: boolean): RuleType =>
+      `${neg ? "EXCLUDE" : "INCLUDE"}_${base}` as RuleType;
+
     typeSelect.addEventListener("change", () => {
-      const newType = typeSelect.value as RuleType;
+      const newBase = typeSelect.value;
+      const currentNeg = rule.ruleType.startsWith("EXCLUDE");
+      const newType = buildRuleType(newBase, isGroupScoped ? currentNeg : true);
       const wasLinked = this.isLinkedType(rule.ruleType);
-      const isLinked = this.isLinkedType(newType);
+      const isLinked = newBase === "LINKED";
       rule.ruleType = newType;
       valueInput.value = "";
       rule.value = "";
       this.attachSuggest(valueInput, newType);
       this.setPlaceholder(valueInput, newType);
 
-      // Re-render if linked status changed (need to add/remove direction field)
       if (wasLinked !== isLinked) {
         this.debounceSaveRules(audienceId, allRules);
         this.refreshAudienceSection(audienceId);
@@ -622,6 +682,16 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
       }
       this.debounceSaveRules(audienceId, allRules);
     });
+
+    if (operatorSelect) {
+      operatorSelect.addEventListener("change", () => {
+        const neg = operatorSelect!.value === "NOT";
+        const base = rule.ruleType.replace(/^(INCLUDE_|EXCLUDE_)/, "");
+        rule.ruleType = buildRuleType(base, neg);
+        this.debounceSaveRules(audienceId, allRules);
+        this.refreshAudienceSection(audienceId);
+      });
+    }
 
     valueInput.addEventListener("change", () => {
       rule.value = valueInput.value.trim();

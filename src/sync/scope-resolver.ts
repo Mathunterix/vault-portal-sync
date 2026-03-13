@@ -56,21 +56,32 @@ export class ScopeResolver {
               : undefined,
           }));
 
-    const includeRules = rules.filter((r) => !r.ruleType.startsWith("EXCLUDE"));
-    const excludeRules = rules.filter((r) => r.ruleType.startsWith("EXCLUDE"));
+    const globalExcludes = rules.filter(
+      (r) => r.ruleType.startsWith("EXCLUDE") && r.groupId === -1,
+    );
+    const groupScopedRules = rules.filter((r) => (r.groupId ?? 0) >= 0);
 
-    // --- INCLUDE: AND within group, OR between groups ---
-    const groups = new Map<number, LocalRule[]>();
-    for (const rule of includeRules) {
+    // --- Group rules by groupId (INCLUDE + group-scoped EXCLUDE together) ---
+    const groups = new Map<
+      number,
+      { includes: LocalRule[]; excludes: LocalRule[] }
+    >();
+    for (const rule of groupScopedRules) {
       const gid = rule.groupId ?? 0;
-      if (!groups.has(gid)) groups.set(gid, []);
-      groups.get(gid)!.push(rule);
+      if (!groups.has(gid)) groups.set(gid, { includes: [], excludes: [] });
+      const group = groups.get(gid)!;
+      if (rule.ruleType.startsWith("EXCLUDE")) {
+        group.excludes.push(rule);
+      } else {
+        group.includes.push(rule);
+      }
     }
 
-    for (const [, groupRules] of groups) {
+    for (const [, { includes, excludes }] of groups) {
+      // AND positive: intersection of INCLUDE rules
       let groupFiles: Set<TFile> | null = null;
 
-      for (const rule of groupRules) {
+      for (const rule of includes) {
         const matched = new Set<TFile>();
         switch (rule.ruleType) {
           case "INCLUDE_FOLDER":
@@ -91,6 +102,26 @@ export class ScopeResolver {
           for (const f of groupFiles) {
             if (!matched.has(f)) groupFiles.delete(f);
           }
+        }
+      }
+
+      // AND negative: subtract group-scoped EXCLUDE results
+      if (groupFiles && excludes.length > 0) {
+        for (const rule of excludes) {
+          const excludeType = rule.ruleType.replace("EXCLUDE_", "INCLUDE_");
+          const matched = new Set<TFile>();
+          switch (excludeType) {
+            case "INCLUDE_FOLDER":
+              this.matchFolder(allFiles, rule.value, matched);
+              break;
+            case "INCLUDE_TAG":
+              this.matchTag(allFiles, rule.value, matched);
+              break;
+            case "INCLUDE_LINKED":
+              this.matchLinked(allFiles, rule.value, rule.direction, matched);
+              break;
+          }
+          for (const f of matched) groupFiles.delete(f);
         }
       }
 
@@ -149,10 +180,10 @@ export class ScopeResolver {
       }
     }
 
-    // --- Post-filter EXCLUDE rules on rule files + audience FM files (OR combinator) ---
+    // --- Post-filter global EXCLUDE rules (groupId = -1) on rule files + audience FM files ---
     const toExcludeFrom = new Set([...ruleSet, ...audienceFmSet]);
     const excluded = new Set<TFile>();
-    for (const rule of excludeRules) {
+    for (const rule of globalExcludes) {
       switch (rule.ruleType) {
         case "EXCLUDE_FOLDER":
           for (const f of toExcludeFrom) {
