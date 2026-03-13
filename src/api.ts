@@ -13,6 +13,7 @@ import {
   SyncResult,
   syncResultSchema,
 } from "./types";
+import { logger } from "./logger";
 
 /**
  * HTTP client for the Vault Portal collab API.
@@ -51,6 +52,8 @@ export class PortalApi {
       params.body = JSON.stringify(body);
     }
 
+    logger.info(`${method} ${path}`, "api");
+
     const response = await requestUrl(params);
 
     if (response.status >= 400) {
@@ -58,6 +61,7 @@ export class PortalApi {
         typeof response.json?.error === "string"
           ? response.json.error
           : `HTTP ${response.status}`;
+      logger.error(`${method} ${path} → ${response.status} ${msg}`, "api");
       throw new Error(msg);
     }
 
@@ -183,7 +187,8 @@ export class PortalApi {
     data: ArrayBuffer,
     mimeType: string,
   ): Promise<void> {
-    await requestUrl({
+    logger.info(`POST /api/collab/upload (${path})`, "api");
+    const response = await requestUrl({
       url: `${this.baseUrl}/api/collab/upload`,
       method: "POST",
       headers: {
@@ -193,5 +198,10 @@ export class PortalApi {
       },
       body: data,
     });
+    if (response.status >= 400) {
+      const msg = `HTTP ${response.status}`;
+      logger.error(`POST /api/collab/upload → ${msg}`, "api");
+      throw new Error(msg);
+    }
   }
 }

@@ -12,6 +12,7 @@ import { SyncEngine, SyncStats } from "./sync/engine";
 import { ScopeResolver } from "./sync/scope-resolver";
 import { VaultWatcher } from "./sync/watcher";
 import { VaultPortalSyncSettingTab } from "./settings";
+import { logger } from "./logger";
 
 interface StoredData extends PluginSettings {
   audienceConfigs?: AudienceFolderConfig[];
@@ -123,6 +124,8 @@ export default class VaultPortalSync extends Plugin {
       return;
     }
 
+    const mode = silent ? "auto" : "manual";
+    logger.info(`Sync demarree (full, ${mode})`, "sync");
     this.updateStatusBar("syncing");
 
     try {
@@ -146,14 +149,27 @@ export default class VaultPortalSync extends Plugin {
       const hasErrors = stats.errors.length > 0;
 
       if (hasErrors) {
-        const total = stats.created + stats.updated;
-        new Notice(
-          `Vault Portal: ${total} synces, ${stats.deleted} supprimes, ${stats.errors.length} erreur(s)`,
-        );
-        this.updateStatusBar("error");
+        this.updateStatusBar("error", stats.errors.length);
+
+        if (silent) {
+          // Silent + partial: show first error detail
+          const firstErr = stats.errors[0] ?? "erreur inconnue";
+          const ok = stats.created + stats.updated;
+          new Notice(
+            `VP: ${ok} OK, ${stats.errors.length} echec — ${firstErr}`,
+            10000,
+          );
+        } else {
+          // Manual + partial
+          new Notice(
+            `VP: ${stats.created} crees, ${stats.updated} maj — ${stats.errors.length} echec (voir logs)`,
+            10000,
+          );
+        }
       } else if (!silent || hasChanges) {
         new Notice(
-          `Vault Portal: ${stats.created} crees, ${stats.updated} maj, ${stats.deleted} supprimes`,
+          `VP: ${stats.created} crees, ${stats.updated} maj, ${stats.deleted} supprimes`,
+          5000,
         );
         this.updateStatusBar("synced");
       } else {
@@ -162,7 +178,8 @@ export default class VaultPortalSync extends Plugin {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      new Notice(`Vault Portal: erreur sync — ${msg}`);
+      logger.error(`Sync echouee: ${msg}`, "sync");
+      new Notice(`VP: erreur sync — ${msg}`, 10000);
       this.updateStatusBar("error");
     }
   }
@@ -172,7 +189,13 @@ export default class VaultPortalSync extends Plugin {
       // Fetch connection info + audiences
       this.connectionInfo = await this.api.getMe();
       this.audiences = await this.api.getAudiences();
-    } catch {
+      logger.info(
+        `Connecte: ${this.connectionInfo.vaultSlug} (${this.audiences.length} audiences)`,
+        "plugin",
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`Connexion echouee: ${msg}`, "plugin");
       this.updateStatusBar("error");
       return;
     }
@@ -188,6 +211,7 @@ export default class VaultPortalSync extends Plugin {
         },
       );
       this.watcher.start();
+      logger.info("Watcher demarre (sync a la modification)", "plugin");
     }
 
     // Periodic sync (silent: only notify when there are actual changes)
@@ -197,6 +221,10 @@ export default class VaultPortalSync extends Plugin {
         this.runFullSync(true);
       }, intervalMs),
     ) as unknown as number;
+    logger.info(
+      `Sync periodique: toutes les ${this.settings.syncIntervalMinutes} min`,
+      "plugin",
+    );
 
     this.updateStatusBar("synced");
   }
@@ -215,6 +243,7 @@ export default class VaultPortalSync extends Plugin {
   private async handleWatcherFlush(files: TFile[]): Promise<void> {
     if (!this.syncEngine || files.length === 0) return;
 
+    logger.info(`Watcher: ${files.length} fichiers modifies`, "watcher");
     this.updateStatusBar("syncing");
     try {
       const stats = await this.syncEngine.incrementalSync(
@@ -224,8 +253,14 @@ export default class VaultPortalSync extends Plugin {
       );
       this.lastSyncTime = new Date();
       this.lastSyncStats = stats;
-      this.updateStatusBar(stats.errors.length > 0 ? "error" : "synced");
-    } catch {
+      if (stats.errors.length > 0) {
+        this.updateStatusBar("error", stats.errors.length);
+      } else {
+        this.updateStatusBar("synced");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`Watcher sync echouee: ${msg}`, "watcher");
       this.updateStatusBar("error");
     }
   }
@@ -252,21 +287,53 @@ export default class VaultPortalSync extends Plugin {
 
   private updateStatusBar(
     state: "idle" | "syncing" | "synced" | "error",
+    errorCount?: number,
   ): void {
     if (!this.statusBarEl) return;
+
+    // Remove old click handler by replacing the element content
+    this.statusBarEl.empty();
+
     switch (state) {
       case "idle":
-        this.statusBarEl.setText("VP: idle");
+        this.statusBarEl.setText("VP \u2713");
         break;
       case "syncing":
-        this.statusBarEl.setText("VP: syncing...");
+        this.statusBarEl.setText("VP \u21bb sync...");
         break;
       case "synced":
-        this.statusBarEl.setText("VP: synced");
+        this.statusBarEl.setText("VP \u2713");
         break;
-      case "error":
-        this.statusBarEl.setText("VP: error");
+      case "error": {
+        const label =
+          errorCount && errorCount > 0
+            ? `VP \u26a0 ${errorCount} echec${errorCount > 1 ? "s" : ""}`
+            : "VP \u2717 erreur";
+        this.statusBarEl.setText(label);
         break;
+      }
+    }
+
+    // Click opens settings (which now includes logs tab)
+    if (state !== "syncing") {
+      this.statusBarEl.style.cursor = "pointer";
+      this.statusBarEl.addEventListener(
+        "click",
+        () => {
+          // Open plugin settings
+          const setting = (this.app as unknown as Record<string, unknown>)
+            .setting as
+            | { open(): void; openTabById(id: string): void }
+            | undefined;
+          if (setting) {
+            setting.open();
+            setting.openTabById(this.manifest.id);
+          }
+        },
+        { once: true },
+      );
+    } else {
+      this.statusBarEl.style.cursor = "default";
     }
   }
 }

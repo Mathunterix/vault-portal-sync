@@ -480,3 +480,80 @@
   font-size: 0.8em;
   color: var(--text-muted);
 }
+
+/* ── Logs section ── */
+
+.vps-logs-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.vps-logs-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
+.vps-logs-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.vps-logs-container {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  padding: 8px;
+  font-family: var(--font-monospace);
+  font-size: 0.8em;
+  line-height: 1.5;
+}
+
+.vps-log-row {
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vps-log-time {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.vps-log-level {
+  flex-shrink: 0;
+  width: 40px;
+  font-weight: 600;
+}
+
+.vps-log-info {
+  color: var(--text-muted);
+}
+
+.vps-log-warn {
+  color: var(--text-warning, #b08800);
+}
+
+.vps-log-error {
+  color: var(--text-error);
+}
+
+.vps-log-context {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.vps-log-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -5,6 +5,7 @@ import { TagSuggest } from "./ui/tag-suggest";
 import { NoteSuggest } from "./ui/note-suggest";
 import { CollabAudience, LocalRule, RuleDirection, RuleType } from "./types";
 import type { ScopeBreakdown } from "./sync/scope-resolver";
+import { logger, type LogEntry } from "./logger";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -197,10 +198,19 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
   private badgeElements: Map<string, HTMLElement> = new Map();
   private forceHydrate = true;
   private editedAudiences = new Set<string>();
+  private logListener: ((entry: LogEntry) => void) | null = null;
 
   constructor(app: App, plugin: VaultPortalSync) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  hide(): void {
+    // Cleanup log listener when settings tab is closed
+    if (this.logListener) {
+      logger.removeListener(this.logListener);
+      this.logListener = null;
+    }
   }
 
   async display(): Promise<void> {
@@ -330,15 +340,90 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
             btn.setButtonText("Sync en cours...");
             try {
               await this.plugin.runFullSync();
-              new Notice("Vault Portal: sync termine");
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
-              new Notice(`Vault Portal: erreur sync — ${msg}`);
+              new Notice(`VP: erreur sync — ${msg}`);
             }
             btn.setDisabled(false);
             btn.setButtonText("Sync");
           }),
       );
+
+    // ── Logs ──
+    this.displayLogs(containerEl);
+  }
+
+  // ── Logs ──
+
+  private displayLogs(containerEl: HTMLElement): void {
+    containerEl.createEl("h2", { text: "Logs" });
+
+    const toolbar = containerEl.createDiv({ cls: "vps-logs-toolbar" });
+
+    const copyBtn = toolbar.createEl("button", {
+      text: "Copier les logs",
+      cls: "vps-logs-btn",
+    });
+    const clearBtn = toolbar.createEl("button", {
+      text: "Effacer",
+      cls: "vps-logs-btn",
+    });
+
+    const logContainer = containerEl.createDiv({ cls: "vps-logs-container" });
+
+    // Render existing entries
+    const entries = logger.getEntries();
+    for (const entry of entries) {
+      this.renderLogEntry(logContainer, entry);
+    }
+
+    // Auto-scroll to bottom
+    logContainer.scrollTop = logContainer.scrollHeight;
+
+    // Live updates
+    if (this.logListener) {
+      logger.removeListener(this.logListener);
+    }
+    this.logListener = (entry: LogEntry) => {
+      this.renderLogEntry(logContainer, entry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    };
+    logger.onNewEntry(this.logListener);
+
+    // Copy button
+    copyBtn.addEventListener("click", () => {
+      const text = logger.copyToClipboard();
+      navigator.clipboard.writeText(text).then(() => {
+        new Notice("VP: logs copies dans le presse-papiers");
+      });
+    });
+
+    // Clear button
+    clearBtn.addEventListener("click", () => {
+      logger.clear();
+      logContainer.empty();
+      new Notice("VP: logs effaces");
+    });
+  }
+
+  private renderLogEntry(container: HTMLElement, entry: LogEntry): void {
+    const row = container.createDiv({ cls: "vps-log-row" });
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const ts = `${pad(entry.timestamp.getHours())}:${pad(entry.timestamp.getMinutes())}:${pad(entry.timestamp.getSeconds())}`;
+
+    row.createEl("span", { text: ts, cls: "vps-log-time" });
+    row.createEl("span", {
+      text: entry.level.toUpperCase(),
+      cls: `vps-log-level vps-log-${entry.level}`,
+    });
+    if (entry.context) {
+      row.createEl("span", {
+        text: `[${entry.context}]`,
+        cls: "vps-log-context",
+      });
+    }
+    row.createEl("span", { text: entry.message, cls: "vps-log-message" });
   }
 
   // ── Connection ──

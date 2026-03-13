@@ -9,6 +9,7 @@ import {
 } from "../types";
 import { computeChecksum } from "./checksum";
 import { extractAttachmentRefs, resolveAttachment } from "./attachments";
+import { logger } from "../logger";
 
 const BATCH_SIZE = 20;
 const MAX_FILE_SIZE = 1_000_000; // 1MB per file
@@ -51,8 +52,14 @@ export class SyncEngine {
       errors: [],
     };
 
+    const syncStart = Date.now();
+
     // 1. Resolve scope (union of all audiences)
     const filesInScope = this.scopeResolver.resolveAll(audiences, localConfigs);
+    logger.info(
+      `Scope: ${filesInScope.length} fichiers (${audiences.length} audiences)`,
+      "sync",
+    );
 
     // 2. Get server checksums
     const serverChecksums = await this.api.getChecksums();
@@ -70,7 +77,10 @@ export class SyncEngine {
       const content = await this.app.vault.cachedRead(file);
 
       if (content.length > MAX_FILE_SIZE) {
-        stats.errors.push(`${file.path}: too large (>${MAX_FILE_SIZE} bytes)`);
+        const sizeMB = (content.length / 1_000_000).toFixed(1);
+        const errMsg = `Fichier ignore: ${file.path} (${sizeMB}MB > limite 1MB)`;
+        logger.warn(errMsg, "sync");
+        stats.errors.push(errMsg);
         continue;
       }
 
@@ -84,8 +94,15 @@ export class SyncEngine {
       }
     }
 
+    logger.info(
+      `Checksums: ${stats.unchanged} inchanges, ${toUpload.length} a envoyer`,
+      "sync",
+    );
+
     // 4. Upload changed files in batches
+    const totalBatches = Math.ceil(toUpload.length / BATCH_SIZE);
     for (let i = 0; i < toUpload.length; i += BATCH_SIZE) {
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
       const batch = toUpload.slice(i, i + BATCH_SIZE);
       const payloads: SyncFilePayload[] = batch.map((item) => ({
         path: item.file.path,
@@ -101,8 +118,16 @@ export class SyncEngine {
         if (result.errors) {
           stats.errors.push(...result.errors);
         }
+        logger.info(
+          `Batch ${batchNum}/${totalBatches}: ${batch.length} fichiers envoyes`,
+          "sync",
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        logger.error(
+          `Batch ${batchNum}/${totalBatches} echoue: ${msg}`,
+          "sync",
+        );
         stats.errors.push(`Batch upload failed: ${msg}`);
       }
     }
@@ -112,8 +137,10 @@ export class SyncEngine {
     try {
       const cleanupResult = await this.api.cleanup(currentPaths);
       stats.deleted = cleanupResult.deleted;
+      logger.info(`Cleanup: ${cleanupResult.deleted} supprimes`, "sync");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`Cleanup echoue: ${msg}`, "sync");
       stats.errors.push(`Cleanup failed: ${msg}`);
     }
 
@@ -121,10 +148,20 @@ export class SyncEngine {
     try {
       const attCount = await this.uploadAttachments(filesInScope);
       stats.attachments = attCount;
+      if (attCount > 0) {
+        logger.info(`Attachments: ${attCount} envoyes`, "sync");
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`Attachments echoue: ${msg}`, "sync");
       stats.errors.push(`Attachments failed: ${msg}`);
     }
+
+    const elapsed = ((Date.now() - syncStart) / 1000).toFixed(1);
+    logger.info(
+      `Sync terminee: ${stats.created} crees, ${stats.updated} maj, ${stats.deleted} suppr, ${stats.errors.length} erreur(s) (${elapsed}s)`,
+      "sync",
+    );
 
     return stats;
   }
@@ -146,27 +183,36 @@ export class SyncEngine {
       errors: [],
     };
 
+    logger.info(`Sync incrementale: ${files.length} fichiers modifies`, "sync");
+
     // Only sync files that are actually in scope
     const allInScope = this.scopeResolver.resolveAll(audiences, localConfigs);
     const inScopePaths = new Set(allInScope.map((f) => f.path));
     const filesToSync = files.filter((f) => inScopePaths.has(f.path));
 
-    if (filesToSync.length === 0) return stats;
+    if (filesToSync.length === 0) {
+      logger.info("Aucun fichier modifie dans le scope", "sync");
+      return stats;
+    }
+
+    logger.info(`${filesToSync.length} fichiers dans le scope`, "sync");
 
     const payloads: SyncFilePayload[] = [];
     for (const file of filesToSync) {
       try {
         const content = await this.app.vault.cachedRead(file);
         if (content.length > MAX_FILE_SIZE) {
-          stats.errors.push(
-            `${file.path}: too large (>${MAX_FILE_SIZE} bytes)`,
-          );
+          const sizeMB = (content.length / 1_000_000).toFixed(1);
+          const errMsg = `Fichier ignore: ${file.path} (${sizeMB}MB > limite 1MB)`;
+          logger.warn(errMsg, "sync");
+          stats.errors.push(errMsg);
           continue;
         }
         const checksum = await computeChecksum(content);
         payloads.push({ path: file.path, content, checksum });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`Lecture echouee: ${file.path} — ${msg}`, "sync");
         stats.errors.push(`Read failed ${file.path}: ${msg}`);
       }
     }
@@ -184,9 +230,15 @@ export class SyncEngine {
         if (result.errors) stats.errors.push(...result.errors);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`Batch upload echoue: ${msg}`, "sync");
         stats.errors.push(`Batch upload failed: ${msg}`);
       }
     }
+
+    logger.info(
+      `Sync incrementale terminee: ${stats.created} crees, ${stats.updated} maj, ${stats.errors.length} erreur(s)`,
+      "sync",
+    );
 
     return stats;
   }
@@ -215,8 +267,12 @@ export class SyncEngine {
             resolved.mimeType,
           );
           count++;
-        } catch {
-          // Skip failed attachments silently
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.warn(
+            `Attachment ignore: ${resolved.file.path} — ${msg}`,
+            "sync",
+          );
         }
       }
     }
