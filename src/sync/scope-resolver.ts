@@ -8,6 +8,8 @@ export interface ScopeBreakdown {
   audienceFmFiles: TFile[];
   /** Files with context frontmatter (user-portal, audience-portal) — chatbot only, not audience-specific */
   contextFiles: TFile[];
+  /** Per-group file results (after group-scoped excludes + global excludes) */
+  groupResults: Map<number, TFile[]>;
   /** All files combined (for sync) */
   all: TFile[];
 }
@@ -77,7 +79,9 @@ export class ScopeResolver {
       }
     }
 
-    for (const [, { includes, excludes }] of groups) {
+    const groupResultsMap = new Map<number, Set<TFile>>();
+
+    for (const [groupId, { includes, excludes }] of groups) {
       // AND positive: intersection of INCLUDE rules
       let groupFiles: Set<TFile> | null = null;
 
@@ -125,8 +129,10 @@ export class ScopeResolver {
         }
       }
 
-      // OR = union between groups
+      // Save per-group result before union
       if (groupFiles) {
+        groupResultsMap.set(groupId, new Set(groupFiles));
+        // OR = union between groups
         for (const f of groupFiles) ruleSet.add(f);
       }
     }
@@ -211,6 +217,9 @@ export class ScopeResolver {
     for (const f of excluded) {
       ruleSet.delete(f);
       audienceFmSet.delete(f);
+      for (const [, gFiles] of groupResultsMap) {
+        gFiles.delete(f);
+      }
     }
 
     // --- Filter out share: false ---
@@ -223,10 +232,16 @@ export class ScopeResolver {
     const audienceFmFiles = [...audienceFmSet].filter(isShareable);
     const contextFiles = [...contextSet].filter(isShareable);
 
+    const groupResults = new Map<number, TFile[]>();
+    for (const [gid, gFiles] of groupResultsMap) {
+      groupResults.set(gid, [...gFiles].filter(isShareable));
+    }
+
     return {
       ruleFiles,
       audienceFmFiles,
       contextFiles,
+      groupResults,
       all: [...ruleFiles, ...audienceFmFiles, ...contextFiles],
     };
   }

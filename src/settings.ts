@@ -1,4 +1,4 @@
-import { App, Modal, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Modal, Notice, PluginSettingTab, Setting, TFile } from "obsidian";
 import type VaultPortalSync from "./main";
 import { FolderSuggest } from "./ui/folder-suggest";
 import { TagSuggest } from "./ui/tag-suggest";
@@ -95,6 +95,83 @@ class ScopePreviewModal extends Modal {
         if (fmPaths.has(file.path)) {
           row.createEl("span", { text: "audience", cls: "vps-preview-tag" });
         }
+        row.createEl("span", { text: folder, cls: "vps-preview-path" });
+      }
+    };
+
+    renderList("");
+    searchInput.addEventListener("input", () => renderList(searchInput.value));
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Group Preview Modal
+// ---------------------------------------------------------------------------
+
+class GroupPreviewModal extends Modal {
+  private files: TFile[];
+  private audienceName: string;
+  private groupNumber: number;
+
+  constructor(
+    app: App,
+    files: TFile[],
+    audienceName: string,
+    groupNumber: number,
+  ) {
+    super(app);
+    this.files = files;
+    this.audienceName = audienceName;
+    this.groupNumber = groupNumber;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("vps-preview-modal");
+
+    const sorted = [...this.files].sort((a, b) => a.path.localeCompare(b.path));
+
+    contentEl.createEl("h2", {
+      text: `Groupe ${this.groupNumber} — ${this.audienceName}`,
+    });
+    contentEl.createEl("p", {
+      text: `${sorted.length} fichier(s) inclus par ce groupe.`,
+      cls: "vps-muted",
+    });
+
+    const searchInput = contentEl.createEl("input", {
+      type: "text",
+      cls: "vps-preview-search",
+      placeholder: "Filtrer par nom...",
+    });
+
+    const listEl = contentEl.createDiv({ cls: "vps-preview-list" });
+
+    const renderList = (filter: string) => {
+      listEl.empty();
+      const filtered = filter
+        ? sorted.filter((f) =>
+            f.path.toLowerCase().includes(filter.toLowerCase()),
+          )
+        : sorted;
+
+      if (filtered.length === 0) {
+        listEl.createEl("div", {
+          text: "Aucun fichier correspondant",
+          cls: "vps-muted vps-pad",
+        });
+        return;
+      }
+
+      for (const file of filtered) {
+        const row = listEl.createDiv({ cls: "vps-preview-row" });
+        const folder = file.path.replace(/[^/]+$/, "");
+        row.createEl("span", { text: file.basename, cls: "vps-preview-name" });
         row.createEl("span", { text: folder, cls: "vps-preview-path" });
       }
     };
@@ -388,9 +465,12 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
     }
     const sortedGroupIds = [...groups.keys()].sort((a, b) => a - b);
 
-    // Count
+    // Breakdown (includes per-group results)
     const scopeResolver = this.plugin.getScopeResolver();
-    const fileCount = scopeResolver.countInScope(audience, config);
+    const breakdown = scopeResolver.listInScopeDetailed(audience, config);
+    const fileCount =
+      breakdown.ruleFiles.length + breakdown.audienceFmFiles.length;
+    const groupResults = breakdown.groupResults;
 
     // ── Section container ──
     const section = containerEl.createDiv({ cls: "vps-audience-section" });
@@ -495,6 +575,21 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
             cls: "vps-group-summary",
           });
         }
+
+        // Per-group file count (clickable preview)
+        const groupFileList = groupResults.get(groupId) ?? [];
+        const countEl = groupEl.createEl("p", {
+          text: `${groupFileList.length} fichier(s)`,
+          cls: "vps-group-file-count",
+        });
+        countEl.addEventListener("click", () => {
+          new GroupPreviewModal(
+            this.app,
+            groupFileList,
+            audience.name,
+            gi + 1,
+          ).open();
+        });
       }
     }
 
