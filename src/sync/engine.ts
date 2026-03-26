@@ -4,6 +4,7 @@ import { ScopeResolver } from "./scope-resolver";
 import {
   AudienceFolderConfig,
   CollabAudience,
+  DryRunResult,
   SyncFilePayload,
   SyncResult,
 } from "../types";
@@ -164,6 +165,46 @@ export class SyncEngine {
     );
 
     return stats;
+  }
+
+  /**
+   * Dry run: compute scope and diff without uploading anything.
+   */
+  async dryRun(
+    audiences: CollabAudience[],
+    localConfigs: AudienceFolderConfig[],
+  ): Promise<DryRunResult> {
+    const filesInScope = this.scopeResolver.resolveAll(audiences, localConfigs);
+
+    const serverChecksums = await this.api.getChecksums();
+    const serverMap = new Map<string, string>();
+    for (const entry of serverChecksums) {
+      serverMap.set(entry.path, entry.checksum);
+    }
+
+    let toUpload = 0;
+    let unchanged = 0;
+    const localPaths = new Set<string>();
+
+    for (const file of filesInScope) {
+      localPaths.add(file.path);
+      const content = await this.app.vault.cachedRead(file);
+      const checksum = await computeChecksum(content);
+      if (serverMap.get(file.path) === checksum) {
+        unchanged++;
+      } else {
+        toUpload++;
+      }
+    }
+
+    let toDelete = 0;
+    for (const entry of serverChecksums) {
+      if (!localPaths.has(entry.path)) {
+        toDelete++;
+      }
+    }
+
+    return { filesInScope: filesInScope.length, toUpload, toDelete, unchanged };
   }
 
   /**

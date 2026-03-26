@@ -4,13 +4,16 @@ import {
   CollabAudience,
   CollabMe,
   DEFAULT_SETTINGS,
+  DryRunResult,
   PluginSettings,
+  StatusResponse,
   settingsSchema,
 } from "./types";
 import { PortalApi } from "./api";
 import { SyncEngine, SyncStats } from "./sync/engine";
 import { ScopeResolver } from "./sync/scope-resolver";
 import { VaultWatcher } from "./sync/watcher";
+import { HttpTrigger } from "./http-trigger";
 import { VaultPortalSyncSettingTab } from "./settings";
 import { logger } from "./logger";
 
@@ -28,6 +31,7 @@ export default class VaultPortalSync extends Plugin {
   private syncEngine: SyncEngine | null = null;
   private scopeResolver: ScopeResolver | null = null;
   private watcher: VaultWatcher | null = null;
+  private httpTrigger: HttpTrigger | null = null;
   private intervalId: number | null = null;
   private statusBarEl: HTMLElement | null = null;
   private audiences: CollabAudience[] = [];
@@ -75,10 +79,16 @@ export default class VaultPortalSync extends Plugin {
         });
       }
     }
+
+    // Start HTTP trigger if enabled
+    if (this.settings.httpEnabled && this.settings.httpToken) {
+      this.startHttpTrigger();
+    }
   }
 
   onunload(): void {
     this.stopSync();
+    this.stopHttpTrigger();
   }
 
   getScopeResolver(): ScopeResolver {
@@ -102,7 +112,7 @@ export default class VaultPortalSync extends Plugin {
     }
   }
 
-  async saveSettings(restartSync = false): Promise<void> {
+  async saveSettings(restartSync = false, restartHttp = false): Promise<void> {
     await this.saveData(this.settings);
     this.api.updateConfig(this.settings.portalUrl, this.settings.token);
 
@@ -116,6 +126,94 @@ export default class VaultPortalSync extends Plugin {
         this.startSync();
       }
     }
+
+    if (restartHttp) {
+      this.stopHttpTrigger();
+      if (this.settings.httpEnabled && this.settings.httpToken) {
+        this.startHttpTrigger();
+      }
+    }
+  }
+
+  startHttpTrigger(): void {
+    if (!this.settings.httpToken) {
+      this.settings.httpToken = Array.from(
+        crypto.getRandomValues(new Uint8Array(32)),
+      )
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      this.saveData(this.settings);
+    }
+
+    this.httpTrigger = new HttpTrigger({
+      port: this.settings.httpPort,
+      token: this.settings.httpToken,
+      onSync: () => this.runFullSyncForHttp(),
+      onDryRun: () => this.dryRunForHttp(),
+      getStatus: () => this.getStatusForHttp(),
+    });
+    this.httpTrigger.start();
+  }
+
+  stopHttpTrigger(): void {
+    if (this.httpTrigger) {
+      this.httpTrigger.stop();
+      this.httpTrigger = null;
+    }
+  }
+
+  getHttpTrigger(): HttpTrigger | null {
+    return this.httpTrigger;
+  }
+
+  private async runFullSyncForHttp(): Promise<SyncStats> {
+    if (!this.settings.portalUrl || !this.settings.token) {
+      throw new Error("Plugin not configured");
+    }
+    this.updateStatusBar("syncing");
+    this.audiences = await this.api.getAudiences();
+    if (!this.syncEngine) {
+      this.syncEngine = new SyncEngine(this.app, this.api);
+    }
+    const stats = await this.syncEngine.fullSync(
+      this.audiences,
+      this.settings.audienceConfigs ?? [],
+    );
+    this.lastSyncTime = new Date();
+    this.lastSyncStats = stats;
+    this.updateStatusBar(
+      stats.errors.length > 0 ? "error" : "synced",
+      stats.errors.length,
+    );
+    return stats;
+  }
+
+  private async dryRunForHttp(): Promise<DryRunResult> {
+    if (!this.settings.portalUrl || !this.settings.token) {
+      throw new Error("Plugin not configured");
+    }
+    this.audiences = await this.api.getAudiences();
+    if (!this.syncEngine) {
+      this.syncEngine = new SyncEngine(this.app, this.api);
+    }
+    return this.syncEngine.dryRun(
+      this.audiences,
+      this.settings.audienceConfigs ?? [],
+    );
+  }
+
+  private getStatusForHttp(): StatusResponse {
+    return {
+      connected: this.connectionInfo !== null,
+      syncing: false,
+      lastSyncTime: this.lastSyncTime?.toISOString() ?? null,
+      lastSyncStats: this.lastSyncStats ?? null,
+      audiences: this.audiences.map((a) => ({
+        id: a.id,
+        name: a.name,
+        slug: a.slug,
+      })),
+    };
   }
 
   async runFullSync(silent = false): Promise<void> {

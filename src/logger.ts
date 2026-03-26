@@ -1,5 +1,11 @@
 export type LogLevel = "info" | "warn" | "error";
-export type LogContext = "sync" | "api" | "scope" | "watcher" | "plugin";
+export type LogContext =
+  | "sync"
+  | "api"
+  | "scope"
+  | "watcher"
+  | "plugin"
+  | "http";
 
 export interface LogEntry {
   timestamp: Date;

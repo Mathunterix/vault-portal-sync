@@ -10,6 +10,9 @@ export const settingsSchema = z.object({
   enabled: z.boolean().default(true),
   syncOnSave: z.boolean().default(true),
   syncIntervalMinutes: z.number().min(1).max(120).default(15),
+  httpEnabled: z.boolean().default(false),
+  httpPort: z.number().min(1024).max(65535).default(27125),
+  httpToken: z.string().default(""),
 });
 
 export type PluginSettings = z.infer<typeof settingsSchema>;
@@ -20,6 +23,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   enabled: true,
   syncOnSave: true,
   syncIntervalMinutes: 15,
+  httpEnabled: false,
+  httpPort: 27125,
+  httpToken: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -118,6 +124,25 @@ export const cleanupResultSchema = z.object({
 });
 
 export type CleanupResult = z.infer<typeof cleanupResultSchema>;
+
+// ---------------------------------------------------------------------------
+// HTTP trigger types
+// ---------------------------------------------------------------------------
+
+export interface DryRunResult {
+  filesInScope: number;
+  toUpload: number;
+  toDelete: number;
+  unchanged: number;
+}
+
+export interface StatusResponse {
+  connected: boolean;
+  syncing: boolean;
+  lastSyncTime: string | null;
+  lastSyncStats: import("./sync/engine").SyncStats | null;
+  audiences: { id: string; name: string; slug: string }[];
+}
 
 // ---------------------------------------------------------------------------
 // Sync file payload

@@ -11,18 +11,6 @@ import { logger, type LogEntry } from "./logger";
 // Constants
 // ---------------------------------------------------------------------------
 
-const INCLUDE_TYPES: { value: RuleType; label: string }[] = [
-  { value: "INCLUDE_FOLDER", label: "Dossier" },
-  { value: "INCLUDE_TAG", label: "Tag" },
-  { value: "INCLUDE_LINKED", label: "Lie a" },
-];
-
-const EXCLUDE_TYPES: { value: RuleType; label: string }[] = [
-  { value: "EXCLUDE_FOLDER", label: "Dossier" },
-  { value: "EXCLUDE_TAG", label: "Tag" },
-  { value: "EXCLUDE_LINKED", label: "Lie a" },
-];
-
 const DIRECTION_OPTIONS: { value: RuleDirection; label: string }[] = [
   { value: "BOTH", label: "Les deux" },
   { value: "OUTGOING", label: "Sortant" },
@@ -349,8 +337,127 @@ export class VaultPortalSyncSettingTab extends PluginSettingTab {
           }),
       );
 
+    // ── HTTP Trigger ──
+    this.displayHttpTrigger(containerEl);
+
     // ── Logs ──
     this.displayLogs(containerEl);
+  }
+
+  // ── HTTP Trigger ──
+
+  private displayHttpTrigger(containerEl: HTMLElement): void {
+    containerEl.createEl("h2", { text: "Trigger HTTP (Claude Code)" });
+
+    const httpSubOptions = containerEl.createDiv();
+    httpSubOptions.style.display = this.plugin.settings.httpEnabled
+      ? "block"
+      : "none";
+
+    new Setting(containerEl)
+      .setName("Activer le trigger HTTP")
+      .setDesc(
+        "Permet a Claude Code de declencher une sync depuis le terminal via curl.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.httpEnabled)
+          .onChange(async (value) => {
+            this.plugin.settings.httpEnabled = value;
+            httpSubOptions.style.display = value ? "block" : "none";
+            if (value && !this.plugin.settings.httpToken) {
+              this.plugin.settings.httpToken = Array.from(
+                crypto.getRandomValues(new Uint8Array(32)),
+              )
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
+            }
+            await this.plugin.saveSettings(false, true);
+            if (value) {
+              this.display();
+            }
+          }),
+      );
+
+    // Move sub-options after the toggle
+    containerEl.appendChild(httpSubOptions);
+
+    // Port
+    new Setting(httpSubOptions)
+      .setName("Port")
+      .setDesc("Port du serveur HTTP local (defaut: 27125)")
+      .addText((text) =>
+        text
+          .setPlaceholder("27125")
+          .setValue(String(this.plugin.settings.httpPort))
+          .onChange(async (value) => {
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 1024 && num <= 65535) {
+              this.plugin.settings.httpPort = num;
+              await this.plugin.saveSettings(false, true);
+            }
+          }),
+      );
+
+    // Token (readonly + copy)
+    new Setting(httpSubOptions)
+      .setName("Token")
+      .setDesc("Token d'authentification pour les requetes HTTP")
+      .addText((text) => {
+        text.setValue(this.plugin.settings.httpToken);
+        text.inputEl.readOnly = true;
+        text.inputEl.type = "password";
+        text.inputEl.style.fontFamily = "monospace";
+        text.inputEl.style.fontSize = "11px";
+      })
+      .addButton((btn) =>
+        btn.setButtonText("Copier").onClick(() => {
+          navigator.clipboard.writeText(this.plugin.settings.httpToken);
+          new Notice("VP: token copie");
+        }),
+      );
+
+    // Snippet curl
+    const snippetContainer = httpSubOptions.createDiv({
+      cls: "vps-http-snippet",
+    });
+    const port = this.plugin.settings.httpPort;
+    const token = this.plugin.settings.httpToken;
+    const curlCmd = `curl -s -X POST http://127.0.0.1:${port}/sync -H "Authorization: Bearer ${token}"`;
+
+    snippetContainer.createEl("div", {
+      text: "Commande pour Claude Code :",
+      cls: "vps-muted",
+    });
+    const codeEl = snippetContainer.createEl("code", {
+      text: curlCmd,
+      cls: "vps-http-code",
+    });
+    codeEl.style.display = "block";
+    codeEl.style.padding = "8px";
+    codeEl.style.fontSize = "11px";
+    codeEl.style.wordBreak = "break-all";
+    codeEl.style.cursor = "pointer";
+    codeEl.title = "Cliquer pour copier";
+    codeEl.addEventListener("click", () => {
+      navigator.clipboard.writeText(curlCmd);
+      new Notice("VP: commande curl copiee");
+    });
+
+    // Status indicator
+    const httpTrigger = this.plugin.getHttpTrigger();
+    const statusDiv = httpSubOptions.createDiv({ cls: "vps-http-status" });
+    if (httpTrigger?.isRunning()) {
+      statusDiv.createEl("span", {
+        text: `Actif sur 127.0.0.1:${port}`,
+        cls: "vps-status-ok",
+      });
+    } else if (this.plugin.settings.httpEnabled) {
+      statusDiv.createEl("span", {
+        text: "Inactif",
+        cls: "vps-muted",
+      });
+    }
   }
 
   // ── Logs ──
